@@ -90,13 +90,27 @@ async function processTransactionsFromCSV(filePath, userId) {
             const aiCache = new Map();
             const delay = ms => new Promise(res => setTimeout(res, ms));
 
+            // HYBRYDOWY SŁOWNIK LOKALNY - pozwala zignorować AI dla 90% powtarzalnych w Polsce transakcji (Ekstremalne przyspieszenie skryptu)
+            const localNeeds = ['BIEDRONKA', 'KAUFLAND', 'LIDL', 'ZABKA', 'STOKROTKA', 'DEALZ', 'NETTO', 'APTEKA', 'PIEKARNIA', 'CUKIERNIA', 'ORLEN', 'BP', 'SHELL', 'CIRCLE', 'CARREFOUR', 'AUCHAN', 'ALDI', 'ROSSMANN'];
+            const localWants = ['SPOTIFY', 'NETFLIX', 'ENDORFINA', 'MCDONALD', 'KFC', 'KEBAB', 'VAPE', 'LODOLANDIA', 'KINO', 'MULTIPLEX', 'MAX BURGER', 'BURGER KING', 'ZALANDO', 'HBO', 'DISNEY', 'APPLE.COM'];
+
             for (const tx of results) {
                 let aiType = 'needs';
+                const descUpper = tx.category.toUpperCase();
 
-                // Sprawdzamy czy AI już kategoryzowało dany sklep/opis w tym wyciągu
-                if (aiCache.has(tx.category)) {
+                // 1. Sprawdzamy lokalne filtry (natychmiastowe 0.0s)
+                if (localNeeds.some(keyword => descUpper.includes(keyword))) {
+                    aiType = 'needs';
+                }
+                else if (localWants.some(keyword => descUpper.includes(keyword))) {
+                    aiType = 'wants';
+                }
+                // 2. Jeśli nie ma w słowniku, sprawdzamy pamięć z tego importu 
+                else if (aiCache.has(tx.category)) {
                     aiType = aiCache.get(tx.category);
-                } else {
+                }
+                // 3. Jeśli nie znamy tego miejsca, puszczamy do Gemini
+                else {
                     let retries = 3;
                     let success = false;
                     while (retries > 0 && !success) {
@@ -104,7 +118,7 @@ async function processTransactionsFromCSV(filePath, userId) {
                             const aiRes = await axios.post(`${AI_SERVICE_URL}/categorize`, {
                                 description: tx.category
                             });
-                            
+
                             // Jeśli Python złapał np. 503 UNAVAILABLE lub 429 RESOURCE_EXHAUSTED, zwróci HTTP 200, lecz z polem error
                             if (aiRes.data && aiRes.data.error) {
                                 throw new Error(aiRes.data.error);
@@ -115,17 +129,17 @@ async function processTransactionsFromCSV(filePath, userId) {
                                 aiCache.set(tx.category, aiType); // Zapamiętujemy na przyszłość
                                 success = true;
                             }
-                            
+
                             // Omijamy darmowe limity Gemini
                             await delay(4200);
 
-                        } catch(err) {
+                        } catch (err) {
                             retries--;
                             const errMsg = err.message || (err.response && err.response.statusText) || "Unknown Error";
-                            
+
                             if (errMsg.includes('429') || errMsg.includes('503') || errMsg.includes('UNAVAILABLE') || (err.response && (err.response.status === 429 || err.response.status === 503))) {
-                                console.warn(`[API] Gemini Zajęte (503/429) dla: ${tx.category}. Odczekuję 15s... (Pozostało prób: ${retries})`);
-                                await delay(15000);
+                                console.warn(`[API] Gemini Zajęte (503/429) dla: ${tx.category}. Odczekuję 3s... (Pozostało prób: ${retries})`);
+                                await delay(3000);
                             } else {
                                 console.error(`[API AI] Błąd wywoływania dla ${tx.category}: ${errMsg}`);
                                 break; // Niestandardowy błąd (np brak sieci), przerywamy pętlę retryów i przyjmujemy 'needs'

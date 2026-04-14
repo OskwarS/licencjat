@@ -53,7 +53,7 @@ def categorize_transaction(data: TransactionDesc):
         
         Transakcja do oceny otrzymana z banku to: "{data.description}"
 
-        Zwróć TYLKO I WYŁĄCZNIE jedno surowe słowo 'needs' lub 'wants'. Nie dopisuj żadnej argumentacji ani formatowania, tylko techniczne słowo.
+        Zwróć TYLKO I WYŁĄCZNIE JEDNO surowe słowo 'needs' lub 'wants'. Nie dopisuj żadnej argumentacji ani formatowania, tylko techniczne słowo.
         """
         
         if client is None:
