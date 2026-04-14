@@ -1,0 +1,33 @@
+# Środowiska Wirtualne (Python)
+venv/
+__pycache__/
+*.pyc
+
+# Zmienne środowiskowe z sekretami (Gemini API itp)
+.env
+.env.*
+!.env.example
+
+# Bazy Danych
+# Aby przez przypadek Twoje prywatne testowe zarobki lub wydatki nie trafiły do gita
+*.db
+*.sqlite
+*.sqlite3
+
+# Node.js
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# React Native & Expo
+.expo/
+mobile/.expo/
+
+# Systemowe
+.DS_Store
+Thumbs.db
+
+# Pliki csv
+wyciagi.csv
