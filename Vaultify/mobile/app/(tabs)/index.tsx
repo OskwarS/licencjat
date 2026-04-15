@@ -4,17 +4,13 @@ import { Swipeable } from 'react-native-gesture-handler';
 import axios from 'axios';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
 export default function DashboardScreen() {
   const [budgetData, setBudgetData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [smartAllocation, setSmartAllocation] = useState(50); // Domyslny suwak na srodku 
   const [fixedCosts, setFixedCosts] = useState<any[]>([]);
   const [newKeyword, setNewKeyword] = useState('');
-
-  const simulatedRaise = 1000;
-  const smartSavings = simulatedRaise * (smartAllocation / 100);
-  const spentRaise = simulatedRaise - smartSavings;
 
   const fetchBudget = async () => {
     try {
@@ -111,10 +107,14 @@ export default function DashboardScreen() {
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 120 }}>
         {/* Header */}
         <View className="flex-row justify-between items-center mb-8">
-          <Text className="text-white text-2xl font-bold">Vaultify</Text>
-          <View className="bg-zinc-800 p-2.5 rounded-full">
+          <Text className="text-white text-2xl font-bold">
+            {budgetData.user_name && budgetData.user_name !== 'Demo User' 
+              ? `Cześć, ${budgetData.user_name}!` 
+              : 'Vaultify'}
+          </Text>
+          <TouchableOpacity className="bg-zinc-800 p-2.5 rounded-full" onPress={() => router.push('/profile')}>
             <Ionicons name="person" size={20} color="white" />
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Główny Widget - Safe to Spend */}
@@ -134,7 +134,9 @@ export default function DashboardScreen() {
           <Text className={`text-5xl font-bold tracking-tight ${dailyColor}`}>
             {budgetData.daily_allowance.toFixed(2)} zł
           </Text>
-          <Text className="text-zinc-500 mt-2 text-sm font-medium">Pozostało {budgetData.days_left} dni do końca miesiąca</Text>
+          <Text className="text-zinc-500 mt-2 text-sm font-medium">
+            Pozostało {budgetData.days_left} dni do {budgetData.payday ? `wypłaty (${budgetData.payday}.)` : 'końca miesiąca'}
+          </Text>
         </View>
 
         {/* Podatek dla Przyszłego Mnie */}
@@ -145,68 +147,62 @@ export default function DashboardScreen() {
           </View>
           <View className="flex-row justify-between mb-2">
             <Text className="text-zinc-400 text-sm font-medium">Odłożone w tym miesiącu:</Text>
-            <Text className="text-zinc-300 text-sm font-bold">{(budgetData.net_income * 0.2).toFixed(0)} zł</Text>
+            <Text className="text-zinc-300 text-sm font-bold">{(budgetData.savings || budgetData.net_income * 0.2).toFixed(0)} zł</Text>
+          </View>
+          <View className="flex-row justify-between mb-2">
+            <Text className="text-zinc-400 text-sm font-medium">Aktywny model:</Text>
+            <Text className="text-emerald-400 text-sm font-bold">
+              {budgetData.savings_model === 'smart' ? 'SMarT' 
+                : budgetData.savings_model === 'custom' ? `Własny (${budgetData.custom_needs}/${budgetData.custom_wants}/${budgetData.custom_savings})` 
+                : '50/30/20'}
+            </Text>
           </View>
           <View className="h-4 bg-zinc-800 rounded-full overflow-hidden mt-1">
             <View className="h-full bg-emerald-500 w-full" style={{ width: '100%' }} />
           </View>
         </View>
 
-        {/* Symulator SMarT */}
-        <View className="bg-zinc-900/80 border border-zinc-800/80 rounded-3xl p-6 mb-8">
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-zinc-300 font-bold text-lg">Symulator SMarT</Text>
-            <Ionicons name="rocket" size={24} color="#10b981" />
-          </View>
-          <Text className="text-zinc-400 text-sm mb-4 leading-relaxed">
-            Zabezpiecz swoją przyszłą podwyżkę przed efektem <Text className="text-zinc-300 font-medium">lifestylist creep</Text>. Ustal swój suwak, zanim pieniądze wpłyną na konto.
-          </Text>
+        {/* Symulator SMarT – widoczny tylko gdy model = smart */}
+        {budgetData.savings_model === 'smart' && budgetData.expected_raise > 0 && (
+          <View className="bg-zinc-900/80 border border-blue-500/20 rounded-3xl p-6 mb-8">
+            <View className="flex-row items-center justify-between mb-4">
+              <Text className="text-zinc-300 font-bold text-lg">Aktywny Model SMarT</Text>
+              <Ionicons name="rocket" size={24} color="#3b82f6" />
+            </View>
+            <Text className="text-zinc-400 text-sm mb-4 leading-relaxed">
+              Twoja podwyżka jest automatycznie dzielona wg ustawień w profilu.
+            </Text>
 
-          <View className="bg-zinc-950 rounded-2xl p-4 mb-5 items-center border border-zinc-800/50 shadow-inner">
-            <Text className="text-zinc-500 text-xs uppercase tracking-widest font-bold mb-1">Oczekiwana Podwyżka</Text>
-            <Text className="text-zinc-200 text-2xl font-black">+ 1 000.00 zł</Text>
-          </View>
-
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-zinc-400 text-sm font-medium">Poziom Oszczędności:</Text>
-            <Text className="text-blue-400 text-xl font-black">{smartAllocation}%</Text>
-          </View>
-
-          {/* SMarT Slider / Stepper */}
-          <View className="flex-row items-center justify-between bg-zinc-950 rounded-full p-2 mb-6 border border-zinc-800">
-            <TouchableOpacity
-              onPress={() => setSmartAllocation(Math.max(0, smartAllocation - 10))}
-              className={`w-12 h-12 rounded-full items-center justify-center ${smartAllocation <= 0 ? 'bg-zinc-800/50' : 'bg-zinc-800'}`}
-              disabled={smartAllocation <= 0}
-            >
-              <Ionicons name="remove" size={24} color={smartAllocation <= 0 ? '#52525b' : '#d4d4d8'} />
-            </TouchableOpacity>
-
-            <View className="flex-1 h-2.5 bg-zinc-800 mx-4 rounded-full overflow-hidden">
-              <View className="h-full bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)]" style={{ width: `${smartAllocation}%` }} />
+            <View className="bg-zinc-950 rounded-2xl p-4 mb-5 items-center border border-zinc-800/50">
+              <Text className="text-zinc-500 text-xs uppercase tracking-widest font-bold mb-1">Podwyżka</Text>
+              <Text className="text-zinc-200 text-2xl font-black">+ {budgetData.expected_raise.toFixed(0)} zł</Text>
             </View>
 
-            <TouchableOpacity
-              onPress={() => setSmartAllocation(Math.min(100, smartAllocation + 10))}
-              className={`w-12 h-12 rounded-full items-center justify-center ${smartAllocation >= 100 ? 'bg-zinc-800/50' : 'bg-zinc-800'}`}
-              disabled={smartAllocation >= 100}
-            >
-              <Ionicons name="add" size={24} color={smartAllocation >= 100 ? '#52525b' : '#d4d4d8'} />
-            </TouchableOpacity>
-          </View>
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-zinc-400 text-sm font-medium">Alokacja oszczędności:</Text>
+              <Text className="text-blue-400 text-xl font-black">{budgetData.smart_allocation}%</Text>
+            </View>
 
-          {/* SMarT Results */}
-          <View className="flex-row justify-between">
-            <View className="flex-1 mr-2 bg-zinc-800/30 p-4 rounded-xl border border-zinc-800/80 items-center justify-center">
-              <Text className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider mb-1">Przejesz</Text>
-              <Text className="text-zinc-300 text-lg font-bold">{spentRaise.toFixed(0)} zł</Text>
+            <View className="h-2.5 bg-zinc-800 rounded-full overflow-hidden mb-5">
+              <View className="h-full bg-blue-500 rounded-full" style={{ width: `${budgetData.smart_allocation}%` }} />
             </View>
-            <View className="flex-1 ml-2 bg-blue-500/10 p-4 rounded-xl border border-blue-500/30 items-center justify-center">
-              <Text className="text-blue-400/80 text-[10px] uppercase font-bold tracking-wider mb-1">Oszczędzisz</Text>
-              <Text className="text-blue-400 text-lg font-bold shadow-blue-500">+{smartSavings.toFixed(0)} zł</Text>
+
+            <View className="flex-row justify-between">
+              <View className="flex-1 mr-2 bg-zinc-800/30 p-4 rounded-xl border border-zinc-800/80 items-center justify-center">
+                <Text className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider mb-1">Przejesz</Text>
+                <Text className="text-zinc-300 text-lg font-bold">
+                  {(budgetData.expected_raise * (1 - budgetData.smart_allocation / 100)).toFixed(0)} zł
+                </Text>
+              </View>
+              <View className="flex-1 ml-2 bg-blue-500/10 p-4 rounded-xl border border-blue-500/30 items-center justify-center">
+                <Text className="text-blue-400/80 text-[10px] uppercase font-bold tracking-wider mb-1">Oszczędzisz</Text>
+                <Text className="text-blue-400 text-lg font-bold">
+                  +{(budgetData.expected_raise * (budgetData.smart_allocation / 100)).toFixed(0)} zł
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Inteligentne Zablokowane rachunki */}
         <View className="mb-4">

@@ -27,6 +27,36 @@ app.get('/api/user/:id', (req, res) => {
     });
 });
 
+// Aktualizacja profilu usera
+app.put('/api/user/:id', (req, res) => {
+    const userId = req.params.id;
+    const { name, net_income, savings_model, expected_raise, smart_allocation, custom_needs, custom_wants, custom_savings, payday } = req.body;
+    
+    db.run(
+        `UPDATE users SET 
+            name = COALESCE(?, name),
+            net_income = COALESCE(?, net_income),
+            savings_model = COALESCE(?, savings_model),
+            expected_raise = COALESCE(?, expected_raise),
+            smart_allocation = COALESCE(?, smart_allocation),
+            custom_needs = COALESCE(?, custom_needs),
+            custom_wants = COALESCE(?, custom_wants),
+            custom_savings = COALESCE(?, custom_savings),
+            payday = COALESCE(?, payday)
+        WHERE id = ?`,
+        [name, net_income, savings_model, expected_raise, smart_allocation, custom_needs, custom_wants, custom_savings, payday, userId],
+        function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            if (this.changes === 0) return res.status(404).json({ error: 'User not found' });
+            
+            db.get('SELECT * FROM users WHERE id = ?', [userId], (err, row) => {
+                if (err) return res.status(500).json({ error: err.message });
+                res.json(row);
+            });
+        }
+    );
+});
+
 // Utworzenie nowej transakcji (np. ręcznie przez przycisk +)
 app.post('/api/transactions', async (req, res) => {
     const { user_id, amount, category, type } = req.body;
@@ -164,14 +194,27 @@ app.get('/api/fixed-costs/:userId', (req, res) => {
 app.get('/api/budget/status/:userId', (req, res) => {
     const userId = req.params.userId;
     
-    db.get('SELECT net_income FROM users WHERE id = ?', [userId], async (err, userRow) => {
+    db.get('SELECT * FROM users WHERE id = ?', [userId], async (err, userRow) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!userRow) return res.status(404).json({ error: 'User not found' });
 
         try {
-            // Najpierw pobierz podział z modelu 50/30/20 z Python AI
+            const model = userRow.savings_model || '503020';
+            const expectedRaise = userRow.expected_raise || 0;
+            const smartAlloc = userRow.smart_allocation || 50;
+            const customNeeds = userRow.custom_needs || 50;
+            const customWants = userRow.custom_wants || 30;
+            const customSavings = userRow.custom_savings || 20;
+
+            // Pobierz podział budżetowy z Python AI
             const aiRes = await axios.post(`${AI_SERVICE_URL}/calculate`, {
-                net_income: userRow.net_income
+                net_income: userRow.net_income,
+                model: model,
+                expected_raise: expectedRaise,
+                smart_allocation: smartAlloc,
+                custom_needs: customNeeds,
+                custom_wants: customWants,
+                custom_savings: customSavings
             });
             const baseWants = aiRes.data.wants;
 
@@ -185,10 +228,21 @@ app.get('/api/budget/status/:userId', (req, res) => {
                 const spentWants = sumRow.spent_wants || 0;
                 const safeToSpend = baseWants - spentWants;
                 
-                // Oblicz dni do końca miesiąca
+                // Oblicz dni do następnej wypłaty (uwzględniając dzień wypłaty)
+                const payday = userRow.payday || 1;
                 const now = new Date();
-                const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-                const daysLeft = lastDay - now.getDate() + 1; // Włącznie z dzisiejszym
+                const today = now.getDate();
+                let daysLeft;
+                
+                if (today < payday) {
+                    // Jeszcze nie było wypłaty w tym miesiącu – liczymy do dnia wypłaty
+                    daysLeft = payday - today;
+                } else {
+                    // Wypłata już była – liczymy do następnej wypłaty (w przyszłym miesiącu)
+                    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                    daysLeft = (lastDay - today) + payday;
+                }
+                daysLeft = Math.max(daysLeft, 1);
 
                 const dailyAllowance = daysLeft > 0 ? (safeToSpend / daysLeft) : 0;
 
@@ -198,13 +252,64 @@ app.get('/api/budget/status/:userId', (req, res) => {
                     spent_wants: spentWants,
                     safe_to_spend: safeToSpend,
                     daily_allowance: dailyAllowance,
-                    days_left: daysLeft
+                    days_left: daysLeft,
+                    payday: payday,
+                    savings_model: model,
+                    expected_raise: expectedRaise,
+                    smart_allocation: smartAlloc,
+                    custom_needs: customNeeds,
+                    custom_wants: customWants,
+                    custom_savings: customSavings,
+                    savings: aiRes.data.savings,
+                    needs: aiRes.data.needs,
+                    user_name: userRow.name
                 });
             });
         } catch (error) {
             console.error(error);
             res.status(500).json({ error: 'Failed to communicate with AI Service' });
         }
+    });
+});
+
+// --- CELE OSZCZĘDNOŚCIOWE ---
+
+// Pobierz cele oszczędnościowe użytkownika
+app.get('/api/savings-goals/:userId', (req, res) => {
+    db.all('SELECT * FROM savings_goals WHERE user_id = ? ORDER BY id DESC', [req.params.userId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows || []);
+    });
+});
+
+// Dodaj nowy cel
+app.post('/api/savings-goals', (req, res) => {
+    const { user_id, name, target_amount } = req.body;
+    if (!name || !target_amount) return res.status(400).json({ error: 'Podaj nazwę i kwotę celu.' });
+    
+    db.run('INSERT INTO savings_goals (user_id, name, target_amount, current_amount) VALUES (?, ?, ?, 0)',
+        [user_id, name, target_amount],
+        function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ id: this.lastID, success: true });
+        }
+    );
+});
+
+// Aktualizuj postęp celu
+app.put('/api/savings-goals/:id', (req, res) => {
+    const { current_amount } = req.body;
+    db.run('UPDATE savings_goals SET current_amount = ? WHERE id = ?', [current_amount, req.params.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
+    });
+});
+
+// Usuń cel
+app.delete('/api/savings-goals/:id', (req, res) => {
+    db.run('DELETE FROM savings_goals WHERE id = ?', [req.params.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true });
     });
 });
 

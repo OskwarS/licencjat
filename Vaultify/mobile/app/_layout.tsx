@@ -20,6 +20,12 @@ export default function RootLayout() {
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          <Stack.Screen name="profile" options={{ 
+            presentation: 'modal', 
+            title: 'Profil',
+            headerStyle: { backgroundColor: '#09090b' },
+            headerTintColor: '#fff',
+          }} />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>
